@@ -65,6 +65,7 @@ impl<DB: Database> Segment<DB> for AccountHistory {
             last_changeset_pruned_block,
             |a, b| a.key == b.key,
             |key| ShardedKey::last(key.key),
+            |_| false,
         )?;
         trace!(target: "pruner", %processed, pruned = %pruned_indices, %done, "Pruned account history (history)" );
 

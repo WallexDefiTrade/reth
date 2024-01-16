@@ -1,5 +1,6 @@
 use crate::{
     serde_helper::deserialize_opt_prune_mode_with_min_blocks, PruneMode, ReceiptsLogPruneConfig,
+    StorageHistoryPruneConfig,
 };
 use serde::{Deserialize, Serialize};
 
@@ -33,7 +34,8 @@ pub struct PruneModes {
         deserialize_with = "deserialize_opt_prune_mode_with_min_blocks::<MINIMUM_PRUNING_DISTANCE, _>"
     )]
     pub account_history: Option<PruneMode>,
-    /// Storage History pruning configuration.
+    /// Storage History pruning configuration. This setting overrides `storage_history_filter` and
+    /// offers improved performance.
     #[serde(
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_opt_prune_mode_with_min_blocks::<MINIMUM_PRUNING_DISTANCE, _>"
@@ -45,6 +47,13 @@ pub struct PruneModes {
     /// The [BlockNumber](`crate::BlockNumber`) represents the starting block from which point
     /// onwards the receipts are preserved.
     pub receipts_log_filter: ReceiptsLogPruneConfig,
+    /// Storage history pruning configuration by retaining only the storage history of the
+    /// specified contract addresses, discarding others'. This setting is overridden by
+    /// `storage_history`.
+    ///
+    /// The [BlockNumber](`crate::BlockNumber`) represents the starting block from which point
+    /// onwards storage history is preserved.
+    pub storage_history_filter: StorageHistoryPruneConfig,
 }
 
 impl PruneModes {
@@ -62,6 +71,7 @@ impl PruneModes {
             account_history: Some(PruneMode::Full),
             storage_history: Some(PruneMode::Full),
             receipts_log_filter: Default::default(),
+            storage_history_filter: Default::default(),
         }
     }
 }

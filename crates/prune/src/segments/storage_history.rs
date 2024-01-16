@@ -9,8 +9,9 @@ use reth_db::{
     models::{storage_sharded_key::StorageShardedKey, BlockNumberAddress},
     tables,
 };
-use reth_primitives::{PruneMode, PruneSegment};
-use reth_provider::DatabaseProviderRW;
+use reth_interfaces::provider::ProviderResult;
+use reth_primitives::{PruneCheckpoint, PruneMode, PruneSegment};
+use reth_provider::{DatabaseProviderRW, PruneCheckpointWriter};
 use tracing::{instrument, trace};
 
 #[derive(Debug)]
@@ -69,6 +70,7 @@ impl<DB: Database> Segment<DB> for StorageHistory {
             last_changeset_pruned_block,
             |a, b| a.address == b.address && a.sharded_key.key == b.sharded_key.key,
             |key| StorageShardedKey::last(key.address, key.sharded_key.key),
+            |_| false,
         )?;
         trace!(target: "pruner", %processed, deleted = %pruned_indices, %done, "Pruned storage history (history)" );
 
@@ -80,6 +82,24 @@ impl<DB: Database> Segment<DB> for StorageHistory {
                 tx_number: None,
             }),
         })
+    }
+
+    fn save_checkpoint(
+        &self,
+        provider: &DatabaseProviderRW<DB>,
+        checkpoint: PruneCheckpoint,
+    ) -> ProviderResult<()> {
+        provider.save_prune_checkpoint(PruneSegment::StorageHistory, checkpoint)?;
+
+        // `PrunePart::StorageHistory` overrides
+        // `PrunePart::StorageHistoryFilteredByContractAndSlots`, so we can preemptively
+        // limit their pruning start point.
+        provider.save_prune_checkpoint(
+            PruneSegment::StorageHistoryFilteredByContractAndSlots,
+            checkpoint,
+        )?;
+
+        Ok(())
     }
 }
 

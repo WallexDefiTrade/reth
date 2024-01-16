@@ -70,7 +70,8 @@ pub use net::{
 pub use peer::{PeerId, WithPeerId};
 pub use prune::{
     PruneCheckpoint, PruneMode, PruneModes, PruneProgress, PruneSegment, PruneSegmentError,
-    ReceiptsLogPruneConfig, MINIMUM_PRUNING_DISTANCE,
+    ReceiptsLogPruneConfig, StorageHistoryPruneAddressConfig, StorageHistoryPruneConfig,
+    MINIMUM_PRUNING_DISTANCE,
 };
 pub use receipt::{Receipt, ReceiptWithBloom, ReceiptWithBloomRef, Receipts};
 pub use serde_helper::JsonU256;

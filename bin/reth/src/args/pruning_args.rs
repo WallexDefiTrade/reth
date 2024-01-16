@@ -3,9 +3,10 @@
 use clap::Args;
 use reth_config::config::PruneConfig;
 use reth_primitives::{
-    ChainSpec, PruneMode, PruneModes, ReceiptsLogPruneConfig, MINIMUM_PRUNING_DISTANCE,
+    ChainSpec, PruneMode, PruneModes, ReceiptsLogPruneConfig, StorageHistoryPruneAddressConfig,
+    StorageHistoryPruneConfig, MINIMUM_PRUNING_DISTANCE,
 };
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 /// Parameters for pruning and full node
 #[derive(Debug, Args, PartialEq, Default)]
@@ -37,6 +38,22 @@ impl PruningArgs {
                             .deposit_contract
                             .as_ref()
                             .map(|contract| (contract.address, PruneMode::Before(contract.block)))
+                            .into_iter()
+                            .collect(),
+                    ),
+                    storage_history_filter: StorageHistoryPruneConfig(
+                        chain_spec
+                            .deposit_contract
+                            .as_ref()
+                            .map(|contract| {
+                                (
+                                    contract.address,
+                                    StorageHistoryPruneAddressConfig {
+                                        slots: BTreeMap::default(),
+                                        mode: Some(PruneMode::Before(contract.block)),
+                                    },
+                                )
+                            })
                             .into_iter()
                             .collect(),
                     ),

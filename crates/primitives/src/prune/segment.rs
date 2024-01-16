@@ -23,6 +23,9 @@ pub enum PruneSegment {
     Headers,
     /// Prune segment responsible for the `Transactions` table.
     Transactions,
+    /// Prune part responsible for the `StorageChangeSet` and `StorageHistory` tables filtered by
+    /// contract address and storage slots.
+    StorageHistoryFilteredByContractAndSlots,
 }
 
 impl PruneSegment {
@@ -32,9 +35,11 @@ impl PruneSegment {
             Self::SenderRecovery | Self::TransactionLookup | Self::Headers | Self::Transactions => {
                 0
             }
-            Self::Receipts | Self::ContractLogs | Self::AccountHistory | Self::StorageHistory => {
-                MINIMUM_PRUNING_DISTANCE
-            }
+            Self::Receipts |
+            Self::ContractLogs |
+            Self::AccountHistory |
+            Self::StorageHistory |
+            Self::StorageHistoryFilteredByContractAndSlots => MINIMUM_PRUNING_DISTANCE,
         }
     }
 }

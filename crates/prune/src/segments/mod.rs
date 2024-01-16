@@ -6,6 +6,7 @@ mod receipts_by_logs;
 mod sender_recovery;
 mod set;
 mod storage_history;
+mod storage_history_by_contract_and_slots;
 mod transaction_lookup;
 mod transactions;
 
@@ -17,6 +18,7 @@ pub use sender_recovery::SenderRecovery;
 pub use set::SegmentSet;
 use std::fmt::Debug;
 pub use storage_history::StorageHistory;
+pub use storage_history_by_contract_and_slots::StorageHistoryByContractAndSlots;
 pub use transaction_lookup::TransactionLookup;
 pub use transactions::Transactions;
 
