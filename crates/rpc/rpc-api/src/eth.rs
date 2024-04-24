@@ -143,7 +143,7 @@ pub trait EthApi {
 
     /// Returns the balance of the account of given address.
     #[method(name = "getBalance")]
-    async fn balance(&self, address: Address, block_number: Option<BlockId>) -> RpcResult<U256>;
+    async fn balance(&self, address: Address, block_id: Option<BlockId>) -> RpcResult<U256>;
 
     /// Returns the value from a storage position at a given address
     #[method(name = "getStorageAt")]
@@ -151,7 +151,7 @@ pub trait EthApi {
         &self,
         address: Address,
         index: JsonStorageKey,
-        block_number: Option<BlockId>,
+        block_id: Option<BlockId>,
     ) -> RpcResult<B256>;
 
     /// Returns the number of transactions sent from an address at given block number.
@@ -159,12 +159,12 @@ pub trait EthApi {
     async fn transaction_count(
         &self,
         address: Address,
-        block_number: Option<BlockId>,
+        block_id: Option<BlockId>,
     ) -> RpcResult<U256>;
 
     /// Returns code at a given address at given block number.
     #[method(name = "getCode")]
-    async fn get_code(&self, address: Address, block_number: Option<BlockId>) -> RpcResult<Bytes>;
+    async fn get_code(&self, address: Address, block_id: Option<BlockId>) -> RpcResult<Bytes>;
 
     /// Returns the block's header at given number.
     #[method(name = "getHeaderByNumber")]
@@ -179,7 +179,7 @@ pub trait EthApi {
     async fn call(
         &self,
         request: TransactionRequest,
-        block_number: Option<BlockId>,
+        block_id: Option<BlockId>,
         state_overrides: Option<StateOverride>,
         block_overrides: Option<Box<BlockOverrides>>,
     ) -> RpcResult<Bytes>;
@@ -212,7 +212,7 @@ pub trait EthApi {
     async fn create_access_list(
         &self,
         request: TransactionRequest,
-        block_number: Option<BlockId>,
+        block_id: Option<BlockId>,
     ) -> RpcResult<AccessListWithGasUsed>;
 
     /// Generates and returns an estimate of how much gas is necessary to allow the transaction to
@@ -221,7 +221,7 @@ pub trait EthApi {
     async fn estimate_gas(
         &self,
         request: TransactionRequest,
-        block_number: Option<BlockId>,
+        block_id: Option<BlockId>,
         state_override: Option<StateOverride>,
     ) -> RpcResult<U256>;
 
@@ -307,6 +307,6 @@ pub trait EthApi {
         &self,
         address: Address,
         keys: Vec<JsonStorageKey>,
-        block_number: Option<BlockId>,
+        block_id: Option<BlockId>,
     ) -> RpcResult<EIP1186AccountProofResponse>;
 }

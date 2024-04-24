@@ -20,7 +20,8 @@ use reth_primitives::{
     TransactionMeta, TransactionSigned, TransactionSignedEcRecovered, B256, U256,
 };
 use reth_provider::{
-    BlockReaderIdExt, ChainSpecProvider, EvmEnvProvider, StateProviderBox, StateProviderFactory,
+    BlockReaderIdExt, ChainSpecProvider, EvmEnvProvider, ProviderError, StateProviderBox,
+    StateProviderFactory,
 };
 use reth_revm::{
     database::StateProviderDatabase,
@@ -679,8 +680,11 @@ where
             let block_hash = self
                 .provider()
                 .block_hash_for_id(at)?
-                .ok_or_else(|| EthApiError::UnknownBlockNumber)?;
-            let (cfg, env) = self.cache().get_evm_env(block_hash).await?;
+                .ok_or_else(|| EthApiError::UnknownBlockId(at))?;
+            let (cfg, env) = self.cache().get_evm_env(block_hash).await.map_err(|e| match e {
+                ProviderError::HeaderNotFound(_) => EthApiError::UnknownBlockId(at),
+                _ => e.into(),
+            })?;
             Ok((cfg, env, block_hash.into()))
         }
     }
