@@ -23,12 +23,14 @@ use reth_primitives::{
 };
 use reth_provider::{
     chain::{ChainSplit, ChainSplitTarget},
+    providers::ConsistentDbView,
     BlockExecutionWriter, BlockNumReader, BlockWriter, BundleStateWithReceipts,
     CanonStateNotification, CanonStateNotificationSender, CanonStateNotifications, Chain,
     ChainSpecProvider, DisplayBlocksChain, HeaderProvider, ProviderError,
     StaticFileProviderFactory,
 };
 use reth_stages_api::{MetricEvent, MetricEventsSender};
+use reth_trie_parallel::parallel_root::ParallelStateRoot;
 use std::{
     collections::{btree_map::Entry, BTreeMap, HashSet},
     sync::Arc,
@@ -1221,16 +1223,11 @@ where
             }
             None => {
                 debug!(target: "blockchain_tree", blocks = ?block_hash_numbers, "Recomputing state root for insert");
-                let provider = self
-                    .externals
-                    .provider_factory
-                    .provider()?
-                    // State root calculation can take a while, and we're sure no write transaction
-                    // will be open in parallel. See https://github.com/paradigmxyz/reth/issues/6168.
-                    .disable_long_read_transaction_safety();
-                let (state_root, trie_updates) = hashed_state
-                    .state_root_with_updates(provider.tx_ref())
-                    .map_err(Into::<BlockValidationError>::into)?;
+                let consistent_view =
+                    ConsistentDbView::new_with_latest_tip(self.externals.provider_factory.clone())?;
+                let (state_root, trie_updates) =
+                    ParallelStateRoot::new(consistent_view, hashed_state.clone())
+                        .incremental_root_with_updates()?;
                 let tip = blocks.tip();
                 if state_root != tip.state_root {
                     return Err(ProviderError::StateRootMismatch(Box::new(RootMismatch {
