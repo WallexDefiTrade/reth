@@ -29,7 +29,7 @@ async fn can_sync() -> eyre::Result<()> {
     let raw_tx = first_node.wallets.first().unwrap().eip1559().await;
 
     // make the first node advance
-    let (payload, _, tx_hash) = first_node.advance(vec![], eth_payload_attributes, raw_tx).await?;
+    let (payload, tx_hash) = first_node.advance(vec![], eth_payload_attributes, raw_tx).await?;
 
     let block_hash = payload.block().hash();
 

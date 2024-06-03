@@ -7285,6 +7285,7 @@ dependencies = [
  "async-trait",
  "clap",
  "eyre",
+ "futures-util",
  "hyper 0.14.28",
  "jsonrpsee",
  "parking_lot 0.12.3",
