@@ -2444,7 +2444,54 @@ Post-merge hard forks (timestamp based):
                     Head { number: 0, ..Default::default() },
                     ForkId { hash: ForkHash([0xca, 0xf5, 0x17, 0xed]), next: 3950000 },
                 ),
-                // TODO: complete these, see https://github.com/paradigmxyz/reth/issues/8012
+                // Berlin
+                (
+                    Head { number: 3950000, ..Default::default() },
+                    ForkId { hash: ForkHash([0x52, 0x6a, 0x21, 0x71]), next: 105235063 },
+                ),
+                // London
+                (
+                    Head { number: 105235063, ..Default::default() },
+                    ForkId { hash: ForkHash([0xe3, 0x39, 0x8d, 0x7c]), next: 1704992401 },
+                ),
+                // Arrow Glacier
+                (
+                    Head { number: 105235063, ..Default::default() },
+                    ForkId { hash: ForkHash([0xe3, 0x39, 0x8d, 0x7c]), next: 1704992401 },
+                ),
+                // Grey Glacier
+                (
+                    Head { number: 105235063, ..Default::default() },
+                    ForkId { hash: ForkHash([0xe3, 0x39, 0x8d, 0x7c]), next: 1704992401 },
+                ),
+                // Paris
+                (
+                    Head { number: 105235063, ..Default::default() },
+                    ForkId { hash: ForkHash([0xe3, 0x39, 0x8d, 0x7c]), next: 1704992401 },
+                ),
+                // Bedrock
+                (
+                    Head { number: 105235063, ..Default::default() },
+                    ForkId { hash: ForkHash([0xe3, 0x39, 0x8d, 0x7c]), next: 1704992401 },
+                ),
+                // Shanghai
+                (
+                    Head { number: 105235063, timestamp: 1704992401, ..Default::default() },
+                    ForkId { hash: ForkHash([0xbd, 0xd4, 0xfd, 0xb2]), next: 1710374401 },
+                ),
+                // OP activation timestamps
+                // https://specs.optimism.io/protocol/superchain-upgrades.html#activation-timestamps
+                // Canyon
+                (
+                    Head { number: 105235063, timestamp: 1704992401, ..Default::default() },
+                    ForkId { hash: ForkHash([0xbd, 0xd4, 0xfd, 0xb2]), next: 1710374401 },
+                ),
+                // Cancun
+                (
+                    Head { number: 105235063, timestamp: 1710374401, ..Default::default() },
+                    ForkId { hash: ForkHash([0x19, 0xda, 0x4c, 0x52]), next: 0 },
+                ),
+                // Ecotone
                 (
                     Head { number: 105235063, timestamp: 1710374401, ..Default::default() },
                     ForkId { hash: ForkHash([0x19, 0xda, 0x4c, 0x52]), next: 1720627201 },
