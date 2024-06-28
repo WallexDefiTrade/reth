@@ -1,13 +1,7 @@
 use crate::{
-    walker::TrieWalker, BranchNodeCompact, HashBuilder, Nibbles, StorageTrieEntry,
-    StoredBranchNode, StoredNibbles, StoredNibblesSubKey,
+    walker::TrieWalker, BranchNodeCompact, HashBuilder, Nibbles, StoredNibbles, StoredNibblesSubKey,
 };
 use derive_more::Deref;
-use reth_db::tables;
-use reth_db_api::{
-    cursor::{DbCursorRO, DbCursorRW, DbDupCursorRO, DbDupCursorRW},
-    transaction::{DbTx, DbTxMut},
-};
 use reth_primitives::B256;
 use std::collections::{hash_map::IntoIter, HashMap, HashSet};
 
@@ -166,60 +160,13 @@ impl TrieUpdates {
         }));
     }
 
-    /// Flush updates all aggregated updates to the database.
-    pub fn flush(self, tx: &(impl DbTx + DbTxMut)) -> Result<(), reth_db::DatabaseError> {
-        if self.trie_operations.is_empty() {
-            return Ok(())
-        }
+    /// Checks if there are no trie operations.
+    pub fn is_empty(&self) -> bool {
+        self.trie_operations.is_empty()
+    }
 
-        let mut account_trie_cursor = tx.cursor_write::<tables::AccountsTrie>()?;
-        let mut storage_trie_cursor = tx.cursor_dup_write::<tables::StoragesTrie>()?;
-
-        let mut trie_operations = Vec::from_iter(self.trie_operations);
-        trie_operations.sort_unstable_by(|a, b| a.0.cmp(&b.0));
-        for (key, operation) in trie_operations {
-            match key {
-                TrieKey::AccountNode(nibbles) => match operation {
-                    TrieOp::Delete => {
-                        if account_trie_cursor.seek_exact(nibbles)?.is_some() {
-                            account_trie_cursor.delete_current()?;
-                        }
-                    }
-                    TrieOp::Update(node) => {
-                        if !nibbles.0.is_empty() {
-                            account_trie_cursor.upsert(nibbles, StoredBranchNode(node))?;
-                        }
-                    }
-                },
-                TrieKey::StorageTrie(hashed_address) => match operation {
-                    TrieOp::Delete => {
-                        if storage_trie_cursor.seek_exact(hashed_address)?.is_some() {
-                            storage_trie_cursor.delete_current_duplicates()?;
-                        }
-                    }
-                    TrieOp::Update(..) => unreachable!("Cannot update full storage trie."),
-                },
-                TrieKey::StorageNode(hashed_address, nibbles) => {
-                    if !nibbles.is_empty() {
-                        // Delete the old entry if it exists.
-                        if storage_trie_cursor
-                            .seek_by_key_subkey(hashed_address, nibbles.clone())?
-                            .filter(|e| e.nibbles == nibbles)
-                            .is_some()
-                        {
-                            storage_trie_cursor.delete_current()?;
-                        }
-
-                        // The operation is an update, insert new entry.
-                        if let TrieOp::Update(node) = operation {
-                            storage_trie_cursor
-                                .upsert(hashed_address, StorageTrieEntry { nibbles, node })?;
-                        }
-                    }
-                }
-            };
-        }
-
-        Ok(())
+    /// Convert `TrieUpdates` to a vector of trie operations.
+    pub fn into_vec(self) -> Vec<(TrieKey, TrieOp)> {
+        self.into_iter().collect()
     }
 }

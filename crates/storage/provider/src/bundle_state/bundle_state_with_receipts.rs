@@ -68,7 +68,7 @@ impl StateWriter for ExecutionOutcome {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{test_utils::create_test_provider_factory, AccountReader};
+    use crate::{test_utils::create_test_provider_factory, AccountReader, StorageWriter};
     use reth_db::test_utils::create_test_rw_db;
     use reth_db_api::{
         cursor::DbDupCursorRO,
@@ -892,7 +892,7 @@ mod tests {
             }
 
             let (_, updates) = StateRoot::from_tx(tx).root_with_updates().unwrap();
-            updates.flush(tx).unwrap();
+            StorageWriter::write_trie_updates(tx, updates).unwrap();
         })
         .unwrap();
 
