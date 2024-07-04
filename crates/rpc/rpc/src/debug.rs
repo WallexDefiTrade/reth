@@ -1,17 +1,16 @@
-use std::sync::Arc;
-
 use alloy_rlp::{Decodable, Encodable};
 use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
 use reth_chainspec::EthereumHardforks;
+use reth_errors::ProviderError;
 use reth_evm::ConfigureEvmEnv;
 use reth_primitives::{
     Address, Block, BlockId, BlockNumberOrTag, Bytes, TransactionSignedEcRecovered, Withdrawals,
     B256, U256,
 };
 use reth_provider::{
-    BlockReaderIdExt, ChainSpecProvider, EvmEnvProvider, HeaderProvider, StateProviderFactory,
-    TransactionVariant,
+    BlockReaderIdExt, ChainSpecProvider, EvmEnvProvider, HeaderProvider, StateProvider,
+    StateProviderFactory, StateRootProvider, TransactionVariant,
 };
 use reth_revm::database::StateProviderDatabase;
 use reth_rpc_api::DebugApiServer;
@@ -27,14 +26,18 @@ use reth_rpc_types::{
     BlockError, Bundle, RichBlock, StateContext, TransactionRequest,
 };
 use reth_tasks::pool::BlockingTaskGuard;
+use reth_trie::updates::TrieOp;
 use revm::{
-    db::CacheDB,
+    db::{states::bundle_state::BundleRetention, CacheDB},
     primitives::{db::DatabaseCommit, BlockEnv, CfgEnvWithHandlerCfg, Env, EnvWithHandlerCfg},
+    StateBuilder,
 };
 use revm_inspectors::tracing::{
     js::{JsInspector, TransactionContext},
     FourByteInspector, MuxInspector, TracingInspector, TracingInspectorConfig,
 };
+use revm_primitives::{keccak256, HashMap};
+use std::sync::Arc;
 use tokio::sync::{AcquireError, OwnedSemaphorePermit};
 
 /// `debug` API implementation.
@@ -534,6 +537,199 @@ where
             .await
     }
 
+    /// The `debug_executionWitness` method allows for re-execution of a block with the purpose of
+    /// generating an execution witness. The witness comprises of a map of all hashed trie nodes
+    /// to their preimages that were required during the execution of the block, including during
+    /// state root recomputation.
+    pub async fn debug_execution_witness(
+        &self,
+        block: BlockNumberOrTag,
+    ) -> EthResult<HashMap<B256, Bytes>> {
+        let block = match self.inner.eth_api.block(block.into()).await? {
+            None => return Err(EthApiError::UnknownBlockNumber),
+            Some(res) => res,
+        };
+        let (cfg, block_env, _) = self.inner.eth_api.evm_env_at(block.hash().into()).await?;
+        let this = self.clone();
+
+        self.inner
+            .eth_api
+            .spawn_with_state_at_block(block.parent_hash.into(), move |state| {
+                let mut db = StateBuilder::new()
+                    .with_database(StateProviderDatabase::new(state))
+                    .with_bundle_update()
+                    .build();
+
+                // Re-execute all of the transactions in the block to load all touched accounts into
+                // the cache DB.
+                for tx in block.raw_transactions() {
+                    let tx_envelope = TransactionSignedEcRecovered::decode(&mut tx.as_ref())
+                        .map_err(|_| EthApiError::FailedToDecodeSignedTransaction)?;
+                    let env = EnvWithHandlerCfg {
+                        env: Env::boxed(
+                            cfg.cfg_env.clone(),
+                            block_env.clone(),
+                            Call::evm_config(this.eth_api()).tx_env(&tx_envelope),
+                        ),
+                        handler_cfg: cfg.handler_cfg,
+                    };
+
+                    let (res, _) = this.inner.eth_api.transact(&mut db, env)?;
+                    db.commit(res.state);
+                }
+
+                // Merge all state transitions
+                db.merge_transitions(BundleRetention::Reverts);
+
+                // Take the bundle state
+                let bundle_state = db.take_bundle();
+
+                // Destruct the cache database to retrieve the state provider.
+                let state = db.database.into_inner();
+
+                // Grab all account proofs for the data accessed during block execution.
+                //
+                // Note: We grab *all* accounts in the cache here, as the `BundleState` prunes
+                // referenced accounts + storage slots.
+                let account_proofs = db
+                    .cache
+                    .accounts
+                    .into_iter()
+                    .map(|(addr, db_acc)| {
+                        let storage_keys = db_acc
+                            .account
+                            .ok_or(ProviderError::CacheServiceUnavailable)?
+                            .storage
+                            .keys()
+                            .copied()
+                            .map(Into::into)
+                            .collect::<Vec<_>>();
+
+                        let account_proof = state.proof(addr, &storage_keys)?;
+                        Ok(account_proof)
+                    })
+                    .collect::<Result<Vec<_>, ProviderError>>()?;
+
+                // Compute the total number of trie nodes in the account proof witnesses.
+                let total_nodes = account_proofs.iter().fold(0, |acc, proof| {
+                    let account_proof_size = proof.proof.len();
+                    let storage_proofs_size =
+                        proof.storage_proofs.iter().map(|p| p.proof.len()).sum::<usize>();
+                    acc + account_proof_size + storage_proofs_size
+                });
+
+                // Generate the execution witness by re-hashing all intermediate nodes.
+                let mut witness = HashMap::with_capacity(total_nodes);
+                for proof in account_proofs {
+                    // First, add all account proof nodes.
+                    for node in proof.proof {
+                        let hash = keccak256(node.as_ref());
+                        witness.insert(hash, node);
+                    }
+
+                    // Next, add all storage proof nodes.
+                    for storage_proof in proof.storage_proofs {
+                        for node in storage_proof.proof {
+                            let hash = keccak256(node.as_ref());
+                            witness.insert(hash, node);
+                        }
+                    }
+                }
+
+                // Extend the witness with the information required to reproduce the state root
+                // after the block execution.
+                //
+                // The extra witness data appended within this operation consists of siblings within
+                // branch nodes that are required to unblind during state root recomputation.
+                let (_, trie_updates) = state.state_root_with_updates(&bundle_state)?;
+                let trie_deletions = trie_updates
+                    .into_iter()
+                    .filter(|(_, op)| matches!(op, TrieOp::Delete))
+                    .map(|(path, _)| path)
+                    .collect::<Vec<_>>();
+                for _path in trie_deletions {
+                    // // Fetch parent `BranchNodeCompact` from the DB. It must be a branch node, as
+                    // // extension nodes never point to single leaves.
+                    // let (mut cursor, deleted_node_nibble, path): (
+                    //     Box<dyn TrieCursor>,
+                    //     u8,
+                    //     Nibbles,
+                    // ) = match path {
+                    //     TrieKey::AccountNode(nibbles) => {
+                    //         let cursor = this
+                    //             .inner
+                    //             .provider
+                    //             .account_trie_cursor()
+                    //             .map_err(ProviderError::Database)?;
+                    //
+                    //         (Box::new(cursor), nibbles[0], nibbles.slice(1..))
+                    //     }
+                    //     TrieKey::StorageNode(hashed_address, nibbles) => {
+                    //         let cursor = this
+                    //             .inner
+                    //             .provider
+                    //             .storage_trie_cursor(hashed_address)
+                    //             .map_err(ProviderError::Database)?;
+                    //
+                    //         (Box::new(cursor), nibbles[0], nibbles.slice(1..))
+                    //     }
+                    //     TrieKey::StorageTrie(_) => {
+                    //         // Ignore storage trie root updates; These are not required for this portion of the
+                    //         // witness.
+                    //         continue;
+                    //     }
+                    // };
+                    //
+                    // // Fetch the parent branch node from the database.
+                    // let (_, branch) = cursor
+                    //     .seek_exact(path.clone())
+                    //     .map_err(ProviderError::Database)?
+                    //     .ok_or(ProviderError::Database(DatabaseError::Other(
+                    //         "Failed to seek to branch node".to_string(),
+                    //     )))?;
+                    //
+                    // // Check if there are only two children within the parent branch. If there are, one is the deleted
+                    // // leaf, and the other is the sibling that we need to unblind. Otherwise, we can continue, as
+                    // // the branch node will remain after the deletion.
+                    // let sibling_nibble = if branch.state_mask.count_ones() != 2 {
+                    //     continue;
+                    // } else {
+                    //     // Find the first set bit.
+                    //     let first_bit_index = branch.state_mask.trailing_zeros() as u8;
+                    //
+                    //     // Create a new mask, clearing the first set bit.
+                    //     let mask = branch.state_mask.get() & (branch.state_mask.get() - 1);
+                    //
+                    //     // Find the second set bit.
+                    //     let second_bit_index = mask.trailing_zeros() as u8;
+                    //
+                    //     if first_bit_index == deleted_node_nibble {
+                    //         second_bit_index
+                    //     } else {
+                    //         first_bit_index
+                    //     }
+                    // };
+                    // let _sibling_path = Nibbles::from_nibbles_unchecked(
+                    //     std::iter::once(sibling_nibble)
+                    //         .chain(path.iter().copied())
+                    //         .collect::<Vec<_>>(),
+                    // );
+                    //
+                    // // Rebuild the sub-trie rooted at the sibling node using `TrieWalker` +
+                    // // `HashBuilder`.
+                    // // TODO
+                    //
+                    // // Add the preimage of the sibling node to the witness.
+                }
+
+                // TODO: Also need blinded sibling nodes accessed during deletion, to allow for
+                // state root recomputation. As is, this is only sufficient for
+                // executing the block.
+                Ok(witness)
+            })
+            .await
+    }
+
     /// Executes the configured transaction with the environment on the given database.
     ///
     /// Returns the trace frame and the state that got updated after executing the transaction.
@@ -556,7 +752,7 @@ where
                     GethDebugBuiltInTracerType::FourByteTracer => {
                         let mut inspector = FourByteInspector::default();
                         let (res, _) = self.eth_api().inspect(db, env, &mut inspector)?;
-                        return Ok((FourByteFrame::from(inspector).into(), res.state))
+                        return Ok((FourByteFrame::from(inspector).into(), res.state));
                     }
                     GethDebugBuiltInTracerType::CallTracer => {
                         let call_config = tracer_config
@@ -774,6 +970,15 @@ where
     ) -> RpcResult<GethTrace> {
         let _permit = self.acquire_trace_permit().await;
         Ok(Self::debug_trace_transaction(self, tx_hash, opts.unwrap_or_default()).await?)
+    }
+
+    /// Handler for `debug_executionWitness`
+    async fn debug_execution_witness(
+        &self,
+        block: BlockNumberOrTag,
+    ) -> RpcResult<HashMap<B256, Bytes>> {
+        let _permit = self.acquire_trace_permit().await;
+        Ok(Self::debug_execution_witness(self, block).await?)
     }
 
     /// Handler for `debug_traceCall`
