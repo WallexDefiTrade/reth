@@ -140,7 +140,7 @@ members = [
     "examples/exex/minimal/",
     "examples/exex/op-bridge/",
     "testing/ef-tests/",
-    "testing/testing-utils",
+    "testing/testing-utils", "crates/optimism/bin",
 ]
 default-members = ["bin/reth"]
 
