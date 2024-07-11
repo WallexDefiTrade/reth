@@ -7313,6 +7313,7 @@ version = "1.0.1"
 dependencies = [
  "alloy-eips",
  "alloy-sol-types",
+ "dyn-clone",
  "reth-chainspec",
  "reth-ethereum-consensus",
  "reth-ethereum-forks",
