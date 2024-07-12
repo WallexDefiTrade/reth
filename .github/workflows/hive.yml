@@ -87,6 +87,8 @@ jobs:
         sim: [smoke/genesis, smoke/network, ethereum/sync]
         include:
           - sim: devp2p
+            limit: discv5
+          - sim: devp2p
             limit: discv4
           - sim: devp2p
             limit: eth
