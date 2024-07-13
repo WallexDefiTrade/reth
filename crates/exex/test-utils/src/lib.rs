@@ -125,8 +125,9 @@ where
         TestExecutorBuilder,
         TestConsensusBuilder,
     >;
+    type AddOns = EthereumAddOns;
 
-    fn components_builder(self) -> Self::ComponentsBuilder {
+    fn components_builder(&self) -> Self::ComponentsBuilder {
         ComponentsBuilder::default()
             .node_types::<N>()
             .pool(TestPoolBuilder::default())
