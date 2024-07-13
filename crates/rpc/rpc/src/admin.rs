@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
 use alloy_genesis::ChainConfig;
-use alloy_primitives::B256;
 use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
 use reth_chainspec::ChainSpec;
 use reth_network_api::{NetworkInfo, PeerKind, Peers};
 use reth_network_peers::{id2pk, AnyNode, NodeRecord};
+use reth_primitives::EthereumHardfork;
 use reth_rpc_api::AdminApiServer;
-use reth_rpc_server_types::ToRpcResult;
+use reth_rpc_server_types::{result::internal_rpc_err, ToRpcResult};
 use reth_rpc_types::admin::{
     EthInfo, EthPeerInfo, EthProtocolInfo, NodeInfo, PeerInfo, PeerNetworkInfo, PeerProtocolInfo,
     Ports, ProtocolInfo,
@@ -106,36 +106,74 @@ where
     async fn node_info(&self) -> RpcResult<NodeInfo> {
         let enode = self.network.local_node_record();
         let status = self.network.network_status().await.to_rpc_result()?;
-        let config = ChainConfig {
+        let mut config = ChainConfig {
             chain_id: self.chain_spec.chain.id(),
             terminal_total_difficulty_passed: self
                 .chain_spec
                 .get_final_paris_total_difficulty()
                 .is_some(),
+            terminal_total_difficulty: self
+                .chain_spec
+                .hardforks
+                .fork(EthereumHardfork::Paris)
+                .ttd(),
             ..self.chain_spec.genesis().config.clone()
         };
 
-        let node_info = NodeInfo {
-            id: B256::from_slice(&enode.id.as_slice()[..32]),
-            name: status.client_version,
-            enode: enode.to_string(),
-            enr: self.network.local_enr().to_string(),
-            ip: enode.address,
-            ports: Ports { discovery: enode.udp_port, listener: enode.tcp_port },
-            listen_addr: enode.tcp_addr(),
-            protocols: ProtocolInfo {
-                eth: Some(EthProtocolInfo {
-                    network: status.eth_protocol_info.network,
-                    difficulty: status.eth_protocol_info.difficulty,
-                    genesis: status.eth_protocol_info.genesis,
-                    config,
-                    head: status.eth_protocol_info.head,
-                }),
-                snap: None,
-            },
-        };
+        macro_rules! set_block_or_time {
+            ($config:expr, [$( $field:ident => $fork:ident ),* $(,)*]) => {
+                $(
+                    // don't overwrite if already set
+                    if $config.$field.is_none() {
+                        $config.$field = self.chain_spec.hardforks.fork_block(EthereumHardfork::$fork);
+                    }
+                )*
+            };
+        }
 
-        Ok(node_info)
+        set_block_or_time!(config, [
+            homestead_block => Homestead,
+            dao_fork_block => Dao,
+            eip150_block => Tangerine,
+            eip155_block => SpuriousDragon,
+            eip158_block => SpuriousDragon,
+            byzantium_block => Byzantium,
+            constantinople_block => Constantinople,
+            petersburg_block => Petersburg,
+            istanbul_block => Istanbul,
+            muir_glacier_block => MuirGlacier,
+            berlin_block => Berlin,
+            london_block => London,
+            arrow_glacier_block => ArrowGlacier,
+            gray_glacier_block => GrayGlacier,
+            shanghai_time => Shanghai,
+            cancun_time => Cancun,
+            prague_time => Prague,
+        ]);
+
+        if let Ok(pk) = id2pk(enode.id) {
+            Ok(NodeInfo {
+                id: pk.to_string(),
+                name: status.client_version,
+                enode: enode.to_string(),
+                enr: self.network.local_enr().to_string(),
+                ip: enode.address,
+                ports: Ports { discovery: enode.udp_port, listener: enode.tcp_port },
+                listen_addr: enode.tcp_addr(),
+                protocols: ProtocolInfo {
+                    eth: Some(EthProtocolInfo {
+                        network: status.eth_protocol_info.network,
+                        difficulty: status.eth_protocol_info.difficulty,
+                        genesis: status.eth_protocol_info.genesis,
+                        config,
+                        head: status.eth_protocol_info.head,
+                    }),
+                    snap: None,
+                },
+            })
+        } else {
+            Err(internal_rpc_err("Failed to convert local node id to public key"))
+        }
     }
 
     /// Handler for `admin_peerEvents`
