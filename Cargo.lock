@@ -8082,6 +8082,7 @@ dependencies = [
  "c-kzg",
  "criterion",
  "derive_more",
+ "k256",
  "modular-bitfield",
  "nybbles",
  "once_cell",

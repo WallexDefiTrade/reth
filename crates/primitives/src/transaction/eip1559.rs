@@ -2,6 +2,10 @@ use super::access_list::AccessList;
 use crate::{keccak256, Bytes, ChainId, Signature, TxKind, TxType, B256, U256};
 use alloy_rlp::{length_of_length, Decodable, Encodable, Header};
 use core::mem;
+
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
+
 use reth_codecs::{main_codec, Compact};
 
 #[cfg(not(feature = "std"))]
